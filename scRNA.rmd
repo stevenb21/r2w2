@@ -1,0 +1,147 @@
+---
+title: "scRNA w/ Seurat"
+output: html_document
+date: "2024-02-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, include=FALSE}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(sctransform)
+library(DoubletFinder)
+```
+
+## Loading Data
+
+10k Human PBMC, 3' Human peripheral blood mononuclear cells of a healthy female donor aged 25-30.
+
+Libraries were generated from ~16,000 cells (11,984 recovered). Sequenced on an illumina novaseq 6000 to read depth of approximately 40,000 mean reads per cell. 
+
+
+```{r data_loading}
+# Load the PBMC dataset
+pbmc.data <- Read10X(data.dir = "/home/me/rotation_ii/week2/filtered_feature_bc_matrix")
+# Initialize the Seurat object with the raw (non-normalized data).
+pbmc <- CreateSeuratObject(counts = pbmc.data, min.cells = 3, min.features = 200)
+# store mitochondrial percentage in object meta data
+pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
+```
+# Plan: Compare four different pipelines:
+
+For this markdown file we are going to run four pipelines:
+
+I) Seurat Standard
+II) Seurat Standard w/ Doublet Finder
+III) SCTransform
+IV) SCTransform w/ Doublet Finder
+
+# Seurat Standard Pipeline
+### Visualizing QC metrics 
+### Filtering based on QC metrics
+### Normalization
+### Feature selection
+### Scaling data
+### PCA
+### KNN
+### Clusters
+### UMAP/tSNE
+
+```{r}
+# Visualize QC metrics as a violin plot
+VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+```{r}
+plot1 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 80000 & percent.mt < 25)
+pbmc <- NormalizeData(pbmc)
+pbmc <- FindVariableFeatures(pbmc, selection.method = "vst", nfeatures = 2000)
+pbmc <- ScaleData(pbmc)
+pbmc <- RunPCA(pbmc)
+```
+
+
+```{r}
+ElbowPlot(pbmc)
+```
+
+I would choose a PC of 10 here. 
+```{r}
+PC_count = 10
+pbmc <- FindNeighbors(pbmc,dims=1:PC_count)
+pbmc <- FindClusters(pbmc,resolution=1.2)
+```
+```{r}
+pbmc <- RunUMAP(pbmc,dims=1:10)
+DimPlot(pbmc,reduction="umap")
+```
+
+```{r}
+saveRDS(pbmc, file = "/home/me/rotation_ii/week2/Seurat_nodoublet.rds")
+```
+
+```{r}
+pbmc <- readRDS( "/home/me/rotation_ii/week2/Seurat_nodoublet.rds")
+```
+
+
+
+
+
+
+
+# Seurat Standard Normalization with DoubletFinder
+### pK Identification and Doublet Finder with Standard Seurat Pipeline
+
+```{r}
+#sweep.res.list_blood <- paramSweep(pbmc)
+#sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
+#bcmvn_blood <- find.pK(sweep.stats_blood)
+```
+
+
+
+
+
+# SCTransform Normalization
+
+
+```{r data_loading}
+# Load the PBMC dataset
+pbmc.data <- Read10X(data.dir = "/home/me/rotation_ii/week2/filtered_feature_bc_matrix")
+# Initialize the Seurat object with the raw (non-normalized data).
+pbmc <- CreateSeuratObject(counts = pbmc.data, min.cells = 3, min.features = 200)
+# store mitochondrial percentage in object meta data
+pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
+```
+
+```{r}
+pbmc <- SCTransform(pbmc, vars.to.regress = "percent.mt", verbose = FALSE)
+```
+
+```{r}
+pbmc <- RunPCA(pbmc, verbose = FALSE)
+pbmc <- RunUMAP(pbmc, dims = 1:30, verbose = FALSE)
+
+pbmc <- FindNeighbors(pbmc, dims = 1:30, verbose = FALSE)
+pbmc <- FindClusters(pbmc, verbose = FALSE)
+DimPlot(pbmc, label = TRUE)
+```
+
+
+
+# SCTransform Normalization with DoubletFinder
+```{r}
+
+```
+
