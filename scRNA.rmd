@@ -27,7 +27,7 @@ Libraries were generated from ~16,000 cells (11,984 recovered). Sequenced on an 
 
 
 
-```{r data_loading}
+```{r data_loading0}
 # Load the PBMC dataset
 pbmc.data <- Read10X(data.dir = paste0(path,"filtered_feature_bc_matrix/"))
 # Initialize the Seurat object with the raw (non-normalized data).
@@ -91,25 +91,11 @@ DimPlot(pbmc,reduction="umap")
 ```
 
 
-```{r}
-pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
-pbmc.markers %>%
-    group_by(cluster) %>%
-    dplyr::filter(avg_log2FC > 1)
-```
 
-```{r}
-pbmc.markers %>%
-    group_by(cluster) %>%
-    dplyr::filter(avg_log2FC > 1) %>%
-    slice_head(n = 10) %>%
-    ungroup() -> top10
-DoHeatmap(pbmc, features = top10$gene) + NoLegend()
-```
 
 ### DoubletFinder
 
-```{r pK2}
+```{r pK1}
 sweep.res.list_blood <- paramSweep(pbmc)
 sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
 bcmvn_blood <- find.pK(sweep.stats_blood)
@@ -120,6 +106,23 @@ nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
 
 pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = FALSE)
 paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
+```
+### Markers + Heatmap
+
+```{r markers1}
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
+```
+
+```{r markers_map1}
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 ```
 
 ### Seurat Standard: Filtered out doublets
@@ -132,14 +135,14 @@ pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_847 == "Singlet")
 print(length(pbmc$DF.classifications_0.25_0.09_847))
 ```
 
-```{r}
+```{ markers_Seurat_filtered}
 pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
 pbmc.markers %>%
     group_by(cluster) %>%
     dplyr::filter(avg_log2FC > 1)
 ```
 
-```{r}
+```{r markers_Seurat_filtered_map}
 pbmc.markers %>%
     group_by(cluster) %>%
     dplyr::filter(avg_log2FC > 1) %>%
@@ -151,7 +154,7 @@ DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 
 
 # SCTransform
-```{r data_loading}
+```{r data_loading1}
 # Load the PBMC dataset
 pbmc.data <- Read10X(data.dir = paste0(path,"filtered_feature_bc_matrix/"))
 # Initialize the Seurat object with the raw (non-normalized data).
@@ -180,7 +183,9 @@ pbmc <- RunUMAP(pbmc, dims = 1:PC_count, verbose = FALSE)
 DimPlot(pbmc, label = TRUE)
 ```
 
-### DoubletFinder
+
+
+### DoubletFinder ~ SCTransform
 
 ```{r pK2}
 sweep.res.list_blood <- paramSweep(pbmc)
@@ -195,6 +200,16 @@ pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_
 paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
 ```
 
+
+### Markers
+
+```{r}
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
+```
+
 ```{r}
 pbmc.markers %>%
     group_by(cluster) %>%
@@ -203,6 +218,9 @@ pbmc.markers %>%
     ungroup() -> top10
 DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 ```
+
+### SCTransform + Filtered Doublets
+
 
 ```{r filtering_doublets}
 pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_847 == "Singlet")
