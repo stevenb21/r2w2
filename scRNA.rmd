@@ -127,7 +127,7 @@ DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 
 ### Seurat Standard: Filtered out doublets
 
-```{r sct_doublet}
+```{r std_doublet}
 pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = FALSE)
 paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
 
@@ -135,7 +135,12 @@ pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_847 == "Singlet")
 print(length(pbmc$DF.classifications_0.25_0.09_847))
 ```
 
-```{ markers_Seurat_filtered}
+```{r}
+#saveRDS(pbmc, file = paste0(path,"rds_files/seurat_standard.rds"))
+```
+
+
+```{r markers_Seurat_filtered}
 pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
 pbmc.markers %>%
     group_by(cluster) %>%
@@ -159,7 +164,6 @@ DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 pbmc.data <- Read10X(data.dir = paste0(path,"filtered_feature_bc_matrix/"))
 # Initialize the Seurat object with the raw (non-normalized data).
 pbmc <- CreateSeuratObject(counts = pbmc.data,project="SCT_blood",min.cells = 3, min.features = 200)
-# store mitochondrial percentage in object meta data
 pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
 ```
 
@@ -167,28 +171,25 @@ pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
 
 ```{r pca2}
 pbmc <- SCTransform(pbmc, vars.to.regress = "percent.mt", verbose = FALSE)
-
 pbmc <- RunPCA(pbmc, verbose = FALSE)
 ElbowPlot(pbmc)
 ```
 
 ### Clustering + UMAP
 
-```{r sct_cluster}
-PC_count = 13
-pbmc <- FindNeighbors(pbmc,dims=1:PC_count)
-pbmc <- FindClusters(pbmc,resolution=1.2)
 
+```{r}
+PC_count = 10
 pbmc <- RunUMAP(pbmc, dims = 1:PC_count, verbose = FALSE)
-DimPlot(pbmc, label = TRUE)
 ```
+
 
 
 
 ### DoubletFinder ~ SCTransform
 
 ```{r pK2}
-sweep.res.list_blood <- paramSweep(pbmc)
+sweep.res.list_blood_sct <- paramSweep(pbmc,PCs=1:PC_count,sct=TRUE)
 sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
 bcmvn_blood <- find.pK(sweep.stats_blood)
 
@@ -196,9 +197,14 @@ homotypic.prop <- modelHomotypic(pbmc@meta.data$seurat_clusters)
 nExp_poi <- round(0.075*nrow(pbmc@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
 nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
 
-pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = FALSE)
+pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = TRUE)
 paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
 ```
+
+```{r}
+#saveRDS(pbmc, file = paste0(path,"rds_files/sct_transform.rds"))
+```
+
 
 
 ### Markers
