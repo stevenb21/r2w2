@@ -14,6 +14,9 @@ library(Seurat)
 library(patchwork)
 library(sctransform)
 library(DoubletFinder)
+library(glmGamPoi)
+library(presto)
+path = "/home/me/r2w2/"
 ```
 
 ## Loading Data
@@ -23,11 +26,12 @@ library(DoubletFinder)
 Libraries were generated from ~16,000 cells (11,984 recovered). Sequenced on an illumina novaseq 6000 to read depth of approximately 40,000 mean reads per cell. 
 
 
+
 ```{r data_loading}
 # Load the PBMC dataset
-pbmc.data <- Read10X(data.dir = "/home/me/rotation_ii/week2/filtered_feature_bc_matrix")
+pbmc.data <- Read10X(data.dir = paste0(path,"filtered_feature_bc_matrix/"))
 # Initialize the Seurat object with the raw (non-normalized data).
-pbmc <- CreateSeuratObject(counts = pbmc.data, min.cells = 3, min.features = 200)
+pbmc <- CreateSeuratObject(counts = pbmc.data,project="blood_cells",min.cells = 3, min.features = 200)
 # store mitochondrial percentage in object meta data
 pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
 ```
@@ -51,18 +55,18 @@ IV) SCTransform w/ Doublet Finder
 ### Clusters
 ### UMAP/tSNE
 
-```{r}
+```{r violin}
 # Visualize QC metrics as a violin plot
 VlnPlot(pbmc, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
 ```
 
-```{r}
+```{r scatterplot}
 plot1 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "percent.mt")
 plot2 <- FeatureScatter(pbmc, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2
 ```
 
-```{r}
+```{r std_seurat}
 pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 80000 & percent.mt < 25)
 pbmc <- NormalizeData(pbmc)
 pbmc <- FindVariableFeatures(pbmc, selection.method = "vst", nfeatures = 2000)
@@ -71,77 +75,160 @@ pbmc <- RunPCA(pbmc)
 ```
 
 
-```{r}
+```{r eblow1}
 ElbowPlot(pbmc)
 ```
 
 I would choose a PC of 10 here. 
-```{r}
+```{r pca_choice1}
 PC_count = 10
 pbmc <- FindNeighbors(pbmc,dims=1:PC_count)
 pbmc <- FindClusters(pbmc,resolution=1.2)
 ```
-```{r}
+```{r umap1}
 pbmc <- RunUMAP(pbmc,dims=1:10)
 DimPlot(pbmc,reduction="umap")
 ```
 
+
 ```{r}
-saveRDS(pbmc, file = "/home/me/rotation_ii/week2/Seurat_nodoublet.rds")
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
 ```
 
 ```{r}
-pbmc <- readRDS( "/home/me/rotation_ii/week2/Seurat_nodoublet.rds")
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 ```
 
+### DoubletFinder
 
+```{r pK2}
+sweep.res.list_blood <- paramSweep(pbmc)
+sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
+bcmvn_blood <- find.pK(sweep.stats_blood)
 
+homotypic.prop <- modelHomotypic(pbmc@meta.data$seurat_clusters)
+nExp_poi <- round(0.075*nrow(pbmc@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
 
+pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = FALSE)
+paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
+```
 
+### Seurat Standard: Filtered out doublets
 
+```{r sct_doublet}
+pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = FALSE)
+paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
 
-# Seurat Standard Normalization with DoubletFinder
-### pK Identification and Doublet Finder with Standard Seurat Pipeline
+pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_847 == "Singlet")
+print(length(pbmc$DF.classifications_0.25_0.09_847))
+```
 
 ```{r}
-#sweep.res.list_blood <- paramSweep(pbmc)
-#sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
-#bcmvn_blood <- find.pK(sweep.stats_blood)
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
+```
+
+```{r}
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 ```
 
 
 
-
-
-# SCTransform Normalization
-
-
+# SCTransform
 ```{r data_loading}
 # Load the PBMC dataset
-pbmc.data <- Read10X(data.dir = "/home/me/rotation_ii/week2/filtered_feature_bc_matrix")
+pbmc.data <- Read10X(data.dir = paste0(path,"filtered_feature_bc_matrix/"))
 # Initialize the Seurat object with the raw (non-normalized data).
-pbmc <- CreateSeuratObject(counts = pbmc.data, min.cells = 3, min.features = 200)
+pbmc <- CreateSeuratObject(counts = pbmc.data,project="SCT_blood",min.cells = 3, min.features = 200)
 # store mitochondrial percentage in object meta data
 pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
 ```
 
-```{r}
+### SCT transform + PCA
+
+```{r pca2}
 pbmc <- SCTransform(pbmc, vars.to.regress = "percent.mt", verbose = FALSE)
+
+pbmc <- RunPCA(pbmc, verbose = FALSE)
+ElbowPlot(pbmc)
 ```
 
-```{r}
-pbmc <- RunPCA(pbmc, verbose = FALSE)
-pbmc <- RunUMAP(pbmc, dims = 1:30, verbose = FALSE)
+### Clustering + UMAP
 
-pbmc <- FindNeighbors(pbmc, dims = 1:30, verbose = FALSE)
-pbmc <- FindClusters(pbmc, verbose = FALSE)
+```{r sct_cluster}
+PC_count = 13
+pbmc <- FindNeighbors(pbmc,dims=1:PC_count)
+pbmc <- FindClusters(pbmc,resolution=1.2)
+
+pbmc <- RunUMAP(pbmc, dims = 1:PC_count, verbose = FALSE)
 DimPlot(pbmc, label = TRUE)
 ```
 
+### DoubletFinder
 
+```{r pK2}
+sweep.res.list_blood <- paramSweep(pbmc)
+sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
+bcmvn_blood <- find.pK(sweep.stats_blood)
 
-# SCTransform Normalization with DoubletFinder
-```{r}
+homotypic.prop <- modelHomotypic(pbmc@meta.data$seurat_clusters)
+nExp_poi <- round(0.075*nrow(pbmc@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
 
+pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = FALSE)
+paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
 ```
+
+```{r}
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(pbmc, features = top10$gene) + NoLegend()
+```
+
+```{r filtering_doublets}
+pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_847 == "Singlet")
+print(length(pbmc$DF.classifications_0.25_0.09_847))
+```
+
+
+```{r}
+pbmc.markers <- FindAllMarkers(pbmc, only.pos = TRUE)
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1)
+```
+
+```{r}
+pbmc.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 10) %>%
+    ungroup() -> top10
+DoHeatmap(pbmc, features = top10$gene) + NoLegend()
+```
+
+
+
+
+
+
 
