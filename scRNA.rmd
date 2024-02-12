@@ -8,6 +8,21 @@ date: "2024-02-08"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r eval = FALSE, echo = FALSE}
+#install.packages("Seurat")
+#remotes::install_github('chris-mcginnis-ucsf/DoubletFinder')
+
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("glmGamPoi")
+
+#install.packages("devtools")
+#devtools::install_github("immunogenomics/presto")
+
+```
+
+
 ```{r library, include=FALSE}
 library(dplyr)
 library(Seurat)
@@ -16,7 +31,10 @@ library(sctransform)
 library(DoubletFinder)
 library(glmGamPoi)
 library(presto)
-path = "/home/me/r2w2/"
+#path = "/home/me/r2w2/"
+path = "/geode2/home/u090/stevbroo/Quartz/Downloads/r2w2/"
+
+set.seed(1999)
 ```
 
 ## Loading Data
@@ -136,7 +154,7 @@ print(length(pbmc$DF.classifications_0.25_0.09_847))
 ```
 
 ```{r}
-#saveRDS(pbmc, file = paste0(path,"rds_files/seurat_standard.rds"))
+saveRDS(pbmc, file = paste0(path,"seurat_standard.rds"))
 ```
 
 
@@ -172,7 +190,7 @@ pbmc <- PercentageFeatureSet(pbmc, pattern = "^MT-", col.name = "percent.mt")
 ```{r pca2}
 pbmc <- SCTransform(pbmc, vars.to.regress = "percent.mt", verbose = FALSE)
 pbmc <- RunPCA(pbmc, verbose = FALSE)
-ElbowPlot(pbmc)
+#ElbowPlot(pbmc)
 ```
 
 ### Clustering + UMAP
@@ -180,7 +198,13 @@ ElbowPlot(pbmc)
 
 ```{r}
 PC_count = 10
+pbmc <- FindNeighbors(pbmc,dims=1:PC_count)
+pbmc <- FindClusters(pbmc,resolution=1.2)
+
+
 pbmc <- RunUMAP(pbmc, dims = 1:PC_count, verbose = FALSE)
+DimPlot(pbmc,reduction="umap")
+
 ```
 
 
@@ -189,20 +213,25 @@ pbmc <- RunUMAP(pbmc, dims = 1:PC_count, verbose = FALSE)
 ### DoubletFinder ~ SCTransform
 
 ```{r pK2}
-sweep.res.list_blood_sct <- paramSweep(pbmc,PCs=1:PC_count,sct=TRUE)
+sweep.res.list_blood <- paramSweep(pbmc,PCs=1:PC_count,sct=TRUE)
 sweep.stats_blood <- summarizeSweep(sweep.res.list_blood)
 bcmvn_blood <- find.pK(sweep.stats_blood)
+```
 
+
+
+```{r homotypic_sct}
 homotypic.prop <- modelHomotypic(pbmc@meta.data$seurat_clusters)
 nExp_poi <- round(0.075*nrow(pbmc@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
 nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+```
 
+```{r doubletFinder_sct}
 pbmc <- doubletFinder(pbmc, PCs = 1:PC_count, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = FALSE, sct = TRUE)
-paste0("Doublets found: ",sum(pbmc$DF.classifications_0.25_0.09_847 == "Doublet"))
 ```
 
 ```{r}
-#saveRDS(pbmc, file = paste0(path,"rds_files/sct_transform.rds"))
+saveRDS(pbmc, file = paste0(path,"sct_transform.rds"))
 ```
 
 
@@ -229,8 +258,9 @@ DoHeatmap(pbmc, features = top10$gene) + NoLegend()
 
 
 ```{r filtering_doublets}
-pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_847 == "Singlet")
-print(length(pbmc$DF.classifications_0.25_0.09_847))
+
+pbmc <- subset(pbmc, subset=DF.classifications_0.25_0.09_851 == "Singlet")
+print(length(pbmc$DF.classifications_0.25_0.09_851))
 ```
 
 
